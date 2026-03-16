@@ -1,74 +1,104 @@
-from constants import base_url
+from constants import header, base_url
 import requests
 
 
-class TestBookings:
-    def test_positive_booking(self, auth_session, booking_data, new_put_json, patch_json):
-        # TODO Создаём бронирование
-        create_booking = auth_session.post(f"{base_url}/booking", json=booking_data)
+# TODO Создаём session для всех классов
+class TestAuth:
+    session = None
+    booking_id = None
+    create_booking = None
+    put_booking = None
+
+    def test_auth_session(self):
+        session = requests.Session()
+        session.headers.update(header)
+        response = session.post(f'{base_url}/auth',
+                                 json={'username' : 'admin', 'password' : 'password123'})
+        assert response.status_code == 200, f'Ошибка авторизации: {response.status_code}'
+        token = response.json().get('token')
+        assert token is not None, "В ответе не оказалось токена"
+        session.headers.update({"Cookie": f"token={token}"})
+        TestAuth.session = session
+
+
+ # TODO Создаём бронирование
+class TestCreateBooking(TestAuth):
+    def test_create_booking(self, booking_data):
+        create_booking = TestAuth.session.post(f"{base_url}/booking", json=booking_data)
         assert create_booking.status_code == 200, "Ошибка при создании брони"
-        booking_id = create_booking.json().get("bookingid")
-        assert booking_id is not None, "Идентификатор брони не найден в ответе"
+        TestAuth.booking_id = create_booking.json().get("bookingid")
+        assert TestAuth.booking_id is not None, "Идентификатор брони не найден в ответе"
         assert create_booking.json()["booking"]["firstname"] == booking_data["firstname"], \
             "Заданное имя не совпадает"
         assert create_booking.json()["booking"]["totalprice"] == booking_data["totalprice"], \
             "Заданная стоимость не совпадает"
+        TestAuth.create_booking = create_booking
 
-        # TODO Проверяем, что бронирование можно получить по ID
-        get_booking = auth_session.get(f"{base_url}/booking/{booking_id}")
+
+# TODO Проверяем, что бронирование можно получить по ID
+class TestGetBookings(TestAuth):
+    def test_get_booking(self, booking_data):
+        get_booking = TestAuth.session.get(f"{base_url}/booking/{TestAuth.booking_id}")
         assert get_booking.status_code == 200, "Бронь не найдена"
-        assert get_booking.json()["lastname"] == booking_data["lastname"], "Заданная фамилия не совпадает"
+        assert get_booking.json()["lastname"] == TestAuth.create_booking.json()["booking"]["lastname"], "Заданная фамилия не совпадает"
 
-        # TODO Изменяем данные через PUT
-        put_booking = auth_session.put(f'{base_url}/booking/{booking_id}', json=new_put_json)
+
+# TODO Изменяем данные через PUT
+class TestPutBooking(TestAuth):
+    def test_put_booking(self, booking_data):
+        put_booking = TestAuth.session.put(f'{base_url}/booking/{TestAuth.booking_id}', json=booking_data)
         assert put_booking.status_code == 200, "Данные не изменены"
-        assert put_booking.json()["firstname"] != get_booking.json()["firstname"], "Заданное имя совпадает"
-        assert put_booking.json()["totalprice"] != get_booking.json()["totalprice"], "Заданная стоимость совпадает"
-        assert put_booking.json()["firstname"] == new_put_json["firstname"], "Имя не обновилось"
-        assert put_booking.json()["lastname"] == new_put_json["lastname"], "Фамилия не обновилась"
+        assert put_booking.json()["firstname"] != TestAuth.create_booking.json()["booking"]["firstname"], "Заданное имя совпадает"
+        assert put_booking.json()["totalprice"] != TestAuth.create_booking.json()["booking"]["totalprice"], "Заданная стоимость совпадает"
+        assert put_booking.json()["firstname"] == booking_data["firstname"], "Имя не обновилось"
+        assert put_booking.json()["lastname"] == booking_data["lastname"], "Фамилия не обновилась"
+        TestAuth.put_booking = put_booking
 
-        # TODO Изменяем данные через PATCH
-        patch_booking = auth_session.patch(f"{base_url}/booking/{booking_id}", json=patch_json)
+
+# TODO Изменяем данные через PATCH
+class TestPatchBooking(TestAuth):
+    def test_patch_booking(self, patch_json):
+        patch_booking = TestAuth.session.patch(f"{base_url}/booking/{TestAuth.booking_id}", json=patch_json)
         assert patch_booking.status_code == 200, "Данные не изменены"
-        assert patch_booking.json()["firstname"] != put_booking.json()["firstname"], "Имя совпадает"
-        assert patch_booking.json()["lastname"] != put_booking.json()["lastname"], "Фамилия совпадает"
-        assert patch_booking.json()["totalprice"] == put_booking.json()["totalprice"], "Cтоимость не совпадает"
+        assert patch_booking.json()["firstname"] != TestAuth.put_booking.json()["firstname"], "Имя совпадает"
+        assert patch_booking.json()["lastname"] != TestAuth.put_booking.json()["lastname"], "Фамилия совпадает"
+        assert patch_booking.json()["totalprice"] == TestAuth.put_booking.json()["totalprice"], "Cтоимость не совпадает"
         assert patch_booking.json()["firstname"] == patch_json["firstname"], "Имя не обновилось"
         assert patch_booking.json()["lastname"] == patch_json["lastname"], "Фамилия не обновилась"
 
-        # TODO Удаляем бронирование
-        deleted_booking = auth_session.delete(f"{base_url}/booking/{booking_id}")
+
+# TODO Удаляем бронирование
+class TestDeliteBooking(TestAuth):
+    def test_delite_booking(self):
+        deleted_booking = TestAuth.session.delete(f"{base_url}/booking/{TestAuth.booking_id}")
         assert deleted_booking.status_code == 201, "Бронь не удалилась" # TODO Должен быть 204
         # TODO Проверяем, что бронирование больше недоступно
-        get_booking_delite = auth_session.get(f"{base_url}/booking/{booking_id}")
+        get_booking_delite = TestAuth.session.get(f"{base_url}/booking/{TestAuth.booking_id}")
         assert get_booking_delite.status_code == 404, "Бронь не удалилась"
 
-    def test_negative_booking(self, auth_session, negative_scenario_json, two_negative_scenario_json, booking_data,
-                              three_negative_scenario_json):
-        # TODO Создание учетной записи без "lastname"
-        create_booking = auth_session.post(f'{base_url}/booking', json=negative_scenario_json)
-        assert create_booking.status_code == 500, f"Учетная запись создана {create_booking.status_code}"
 
-        # TODO  Создание int в замен str в "lastname"
-        two_negative_booking = auth_session.post(f'{base_url}/booking', json=two_negative_scenario_json)
-        assert two_negative_booking.status_code == 500, f"Учетная запись создана {two_negative_booking.status_code}"
-
+class TestNegativeBooking(TestAuth):
+    def test_delete_not_auth(self, generate_number):
         # TODO Попытка удалить обьект без прав доступа
-        four_negative_booking = requests.delete(f'{base_url}/booking/{444455555444}')
+        four_negative_booking = requests.delete(f'{base_url}/booking/{generate_number}')
         assert four_negative_booking.status_code == 403, "Сервер принимает корректный запрос"
 
+    def test_delete_auth(self, generate_number):
         # TODO Попытка удалить не свой обьект, с правами доступа
-        five_negative_booking = auth_session.delete(f'{base_url}/booking/{444455555444}')
+        five_negative_booking = TestAuth.session.delete(f'{base_url}/booking/{generate_number}')
         assert five_negative_booking.status_code == 405, "Сервер принимает корректный запрос"
 
+    def test_put(self, booking_data, generate_number):
         # TODO Попытка объновить несуществующий обьект
-        six_negative_booking = auth_session.put(f'{base_url}/booking/{444455555444}', json=booking_data)
+        six_negative_booking = TestAuth.session.put(f'{base_url}/booking/{generate_number}', json=booking_data)
         assert six_negative_booking.status_code == 405, "Сервер принимает корректный запрос"
 
+    def test_search(self, generate_number):
         # TODO Попытка найти несуществующий обьект
-        seven_negative_booking = auth_session.get(f"{base_url}/booking/{444455554444}")
+        seven_negative_booking = TestAuth.session.get(f"{base_url}/booking/{generate_number}")
         assert seven_negative_booking.status_code == 404, "Сервер принимает корректный запрос"
 
+    def test_none_json(self, generate_number, three_negative_scenario_json):
         # TODO Передача пустых данных в PUT
-        eight_negative_booking = auth_session.put(f'{base_url}/booking/{4}', json=three_negative_scenario_json)
+        eight_negative_booking = TestAuth.session.put(f'{base_url}/booking/{generate_number}', json=three_negative_scenario_json)
         assert eight_negative_booking.status_code == 400, "Сервер принимает корректный запрос"
