@@ -2,8 +2,12 @@ import pytest
 import requests
 from faker import Faker
 faker = Faker()
+from constants import BASE_URL, AUTH_ENDPOINT
+from custom_requester.custom_requester import CustomRequester
 
-@pytest.fixture()
+
+
+@pytest.fixture
 def booking_data():
     return {
         'firstname': faker.first_name(),
@@ -24,10 +28,31 @@ def patch_json():
         'lastname': faker.last_name()
     }
 
-@pytest.fixture
-def three_negative_scenario_json():
-    return {}
 
 @pytest.fixture(scope='session')
 def generate_number():
     return faker.random_int(min=10000000, max=100000000)
+
+
+@pytest.fixture(scope="session")
+def requester():
+    """
+    Фикстура для создания экземпляра CustomRequester.
+    """
+    session = requests.Session()
+    return CustomRequester(session=session, base_url=BASE_URL)
+
+
+@pytest.fixture(scope="session")
+def auth_token(requester):
+    """Фикстура для получения токена один раз за сессию"""
+    data = {'username': 'admin', 'password': 'password123'}
+    response = requester.send_request(
+        method='POST',
+        endpoint=AUTH_ENDPOINT,
+        data=data,
+        expected_status=200
+    )
+    token = response.json().get('token')
+    assert token is not None, "В ответе не оказалось токена"
+    return {"Cookie": f"token={token}"}
